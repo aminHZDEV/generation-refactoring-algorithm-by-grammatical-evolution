@@ -1,4 +1,3 @@
-
 from pymoo.core.crossover import Crossover
 from pymoo.core.duplicate import ElementwiseDuplicateElimination
 from pymoo.termination.default import DefaultMultiObjectiveTermination
@@ -18,8 +17,7 @@ from Dependencies.ClsUDBMetrics import ClsUDB_Metrics, DesignQualityAttributes
 from Dependencies.Grammar import GrammarClass
 
 
-
-actor_list = [None for _ in range(100)]
+actor_list = []
 
 udb_path = (
     "Resources/und_db/" + dotenv_values().get("RESOURCES_PATH").split(" ")[0] + ".und"
@@ -50,7 +48,7 @@ class ProblemSingleObjective(Problem):
             mode (str): 'single' or 'multi'
         """
 
-        super(ProblemSingleObjective, self).__init__(n_var=100, n_obj=1, n_constr=0)
+        super(ProblemSingleObjective, self).__init__(n_var=21, n_obj=1, n_constr=0)
 
         self.mode = mode
         self.n_obj_virtual = n_objectives
@@ -76,30 +74,39 @@ class ProblemSingleObjective(Problem):
         print(f"Reached Individual with Size {len(x)}")
 
         # for refactoring_operation in x:
-        gc_obj = GrammarClass(
-            project_path=project_path,
-            udb_path=udb_path,
-            chromosome=x,
-        )
-        actor_list = gc_obj._procedure()
-        print("actor list : ", actor_list)
-        # Update Understand DB
-        if actor_list is not None:
-            for i, item in enumerate(actor_list):
-                print(
-                    f"Updating understand database after {i} - \n REFACTORING : {item.refactoring} \n NAME : {item.name} \n TYPE : {item.type} \n SOURCE : {item.source} \n TARGET : {item.target} \n"
-                )
-        else:
-            print(f"not found any refactoring in {x} chromosome")
-        cls_udb_metric_obj.update_understand_database(udb_path=udb_path)
-        qmood_quality_attributes = DesignQualityAttributes(udb_path=udb_path)
-        o1 = qmood_quality_attributes.quality
-        del qmood_quality_attributes
-        score = o1
+        for i, item in enumerate(x):
+            gc_obj = GrammarClass(
+                project_path=project_path,
+                udb_path=udb_path,
+                chromosome=item[1:],
+            )
+            actor_list.append(
+                {"id": x[i][0], "obj": deepcopy(gc_obj._procedure()), "score": 0.0}
+            )
+            print("actor list : ", actor_list)
+            # Update Understand DB
+            if actor_list is not None:
+                for i, item in enumerate(actor_list):
+                    try:
+                        for j in item:
+                            print(
+                                f"Updating understand database after {i} - \n REFACTORING : {j['obj'].refactoring} \n NAME : {j['obj'].name} \n TYPE : {j['obj'].type} \n SOURCE : {j['obj'].source} \n TARGET : {j['obj'].target} \n"
+                            )
+                    except:
+                        continue
+            else:
+                print(f"not found any refactoring in {x} chromosome")
+            cls_udb_metric_obj.update_understand_database(udb_path=udb_path)
+            qmood_quality_attributes = DesignQualityAttributes(udb_path=udb_path)
+            o1 = qmood_quality_attributes.quality
+            del qmood_quality_attributes
+            score = o1
 
-        # Stage 3: Marshal objectives into vector
-        objective_values.append([-1 * score])
-        print(f"Objective values for individual : {[-1 * score]}")
+            actor_list[len(actor_list) - 1]["score"] = deepcopy(score)
+            print("last actor : ", actor_list[len(actor_list) - 1])
+            # Stage 3: Marshal objectives into vector
+            objective_values.append([-1 * score])
+            print(f"Objective values for individual : {[-1 * score]}")
 
         # Stage 4: Marshal all objectives into out dictionary
         out["F"] = np.array(objective_values, dtype=int)
@@ -121,9 +128,10 @@ def is_equal_2_refactorings_list(a, b):
     if len(a.tolist()) != len(b.tolist()):
         return False
     for i in range(1, len(a)):
-        if (actor_list[a[0]] is not None) and (actor_list[b[0]] is not None):
-            if a[i] == b[i] and actor_list[a[0]] is actor_list[b[0]]:
-                return True
+        if len(actor_list) > 0:
+            if (actor_list[a[0]] is not None) and (actor_list[b[0]] is not None):
+                if a[i] == b[i] and actor_list[a[0]] is actor_list[b[0]]:
+                    return True
     return False
 
 
@@ -145,17 +153,16 @@ class IntegerMutation(Mutation):
 
     def _do(self, problem, X, **kwargs):
         print("In mutation000000000000000000000000000000000")
-        for i, individual in enumerate(X):
+        for i, individual in enumerate(X[:][1:]):
             r = np.random.random()
             # with a probability of `mutation_probability` replace the refactoring operation with new one
             if r < self.mutation_probability:
                 # j is a random index in individual
-                j = random.randint(0, len(individual[0]) - 1)
+                j = random.randint(1, len(individual[0]) - 1)
                 random_chromosome = random.choice(self._initializer)
                 item = random.choice(random_chromosome)
-                X[i][0][j] = deepcopy(item)
+                X[i][j] = deepcopy(item)
                 print("Mutation : ", X)
-
         return X
 
 
@@ -174,11 +181,12 @@ class SinglePointCrossover(Crossover):
         # The output will be with the shape (n_offsprings, n_matings, n_var)
         # Because there the number of parents and offsprings are equal it keeps the shape of X
         Y = np.full_like(X, dtype=int)
-
+        print("Y : ", Y)
         # for each mating provided
         for k in range(n_matings):
             # get the first and the second parent (a and b are instance of individuals)
-            a, b = X[0], X[1]
+            a, b = X[0][1:], X[1][1:]
+            id_a, id_b = X[0][0], X[1][0]
 
             len_min = min(len(a) - 1, len(b) - 1)
             cross_point_1 = random.randint(1, int(len_min * 0.30))
@@ -205,7 +213,7 @@ class SinglePointCrossover(Crossover):
                 for i in range(len(b), len(a)):
                     offspring_b.append(deepcopy(a[i][0]))
 
-            Y[0, k], Y[1, k] = offspring_a, offspring_b
+            Y[0], Y[1] = offspring_a.insert(0, id_a), offspring_b.insert(0, id_b)
         return Y
 
 
@@ -215,7 +223,7 @@ class FloatRandomSampling(Sampling):
         return denormalize(val, xl, xu)
 
     def random_between(self, n_var, xl, xu, n_samples=20):
-        val = np.random.uniform(low=2.0, high=100.0, size=(n_samples))
+        val = np.random.uniform(low=2.0, high=100.0, size=(100, n_samples))
         return denormalize(val, xl, xu)
 
     def random(self, problem, n_samples=20):
@@ -230,9 +238,10 @@ class FloatRandomSampling(Sampling):
 class IntegerRandomSampling(FloatRandomSampling):
     def _do(self, problem, n_samples, **kwargs):
         X = super()._do(problem, n_samples, **kwargs)
-        mylist = [np.around(X).astype(int).tolist() for _ in range(n_samples)]
-        for i in range(len(mylist)):
-            mylist[i].insert(0, i)
+        mylist = np.round(X).astype(int)
+        for i, item in enumerate(mylist):
+            mylist[i, 0] = i
+            print(mylist[i])
         return mylist
 
 
@@ -250,7 +259,7 @@ class GenBase:
     def __init__(
         self,
         mod: int = 1,
-        pop_size: int = 100,
+        pop_size: int = 21,
         ge_fitness_evaluations: int = 10000,
         crossover_operator: str = "SP",
         crossover_probability: float = 0.9,
@@ -265,20 +274,19 @@ class GenBase:
         self.mode = mod
         if self.mode == 1:
             self.pop_size = pop_size
-            self.population = [
-                (
-                    np.around(
-                        denormalize(
-                            np.random.uniform(low=2.0, high=100.0, size=20), None, None
-                        )
+            self.population = (
+                np.around(
+                    denormalize(
+                        np.random.uniform(low=2.0, high=100.0, size=20), None, None
                     )
-                    .astype(int)
-                    .tolist()
                 )
-                for i in range(self.pop_size)
-            ]
-            for i in range(len(self.population)):
-                self.population[i].insert(0, i)
+                .astype(int)
+                .tolist()
+            )
+            # for i in range(self.pop_size)
+
+            # for i in range(len(self.population)):
+            #     self.population[i].insert(0, i)
             self.ge_fitness_evaluations = ge_fitness_evaluations
             self.crossover_operator = crossover_operator
             self.mutation_operator = mutation_operator

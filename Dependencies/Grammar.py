@@ -5,11 +5,13 @@ from Refactorings import (
     PullUpMethod,
     PushDownMethod,
     PullUpConstructor,
+    MoveField,
 )
+from pathlib import Path
 import understand as und
 import random
 from collections import Counter
-from antlr4 import *
+import re
 
 
 class GrammarClass:
@@ -26,7 +28,7 @@ class GrammarClass:
     def __init__(
         self, chromosome: list = None, udb_path: str = "", project_path: str = ""
     ):
-        self.chromosome = chromosome[0]
+        self.chromosome = chromosome
         self.udb_path = udb_path
         self.pvot = 0
         self.project_path = project_path
@@ -37,15 +39,122 @@ class GrammarClass:
         print("TEST 01 : ", self.chromosome[self.pvot] % 2)
 
         if len(self.chromosome) > 0:
-            num = self.chromosome[self.pvot] % 2
-            self.pvot += 1
-            if num == 0:
-                print("TEST 02 : ")
-                return self._rtype(), self._procedure()
-            elif num == 1:
-                print("TEST 03 : ")
-                return self._rtype()
+            if len(self.chromosome) > (self.pvot - 1):
+                num = self.chromosome[self.pvot] % 2
+                self.pvot += 1
+                if num == 0:
+                    print("TEST 02 : ")
+                    self._rtype()
+                    self._procedure()
+                elif num == 1:
+                    print("TEST 03 : ")
+                    self._rtype()
         return self.rf_list
+
+    def get_all_variables(self, static=False):
+        _db = und.open(self.udb_path)
+        candidates = []
+        if static:
+            query = _db.ents("Static Variable")
+            blacklist = ()
+        else:
+            query = _db.ents("Variable")
+            blacklist = ("static",)
+        for ent in query:
+            kind_name = ent.kindname().lower()
+            if any(word in kind_name for word in blacklist):
+                continue
+            parent = ent.parent()
+            if parent is None:
+                continue
+            if not parent.kind().check("class") or parent.kind().check("anonymous"):
+                continue
+            source_package = None
+            long_name = ent.longname().split(".")
+            if len(long_name) >= 3:
+                source_package = ".".join(long_name[:-2])
+                source_class, field_name = long_name[-2:]
+            elif len(long_name) == 2:
+                source_class, field_name = long_name
+            else:
+                continue
+
+            is_public = ent.kind().check("public")
+            is_private = ent.kind().check("private")
+            external_references = 0
+            for ref in ent.refs("Setby, Useby"):
+                if ".".join(long_name[:-1]) not in ref.ent().longname():
+                    external_references += 1
+            candidates.append(
+                {
+                    "source_package": source_package,
+                    "source_class": source_class,
+                    "field_name": field_name,
+                    "is_public": is_public,
+                    "is_private": is_private,
+                    "external_references": external_references,
+                }
+            )
+        _db.close()
+        return candidates
+
+    def get_all_methods(self, static=False):
+        _db = und.open(self.udb_path)
+        candidates = []
+        if static:
+            query = _db.ents("Static Method")
+            blacklist = (
+                "abstract",
+                "unknown",
+                "constructor",
+            )
+        else:
+            query = _db.ents("Method")
+            blacklist = (
+                "constructor",
+                "static",
+                "abstract",
+                "unknown",
+            )
+        for ent in query:
+            kind_name = ent.kindname().lower()
+            if any(word in kind_name for word in blacklist):
+                continue
+            parent = ent.parent()
+            if parent is None:
+                continue
+            if not parent.kind().check("class") or parent.kind().check("anonymous"):
+                continue
+            long_name = parent.longname().split(".")
+            method_name = ent.simplename()
+            if len(long_name) == 1:
+                source_class = long_name[-1]
+                source_package = None
+            elif len(long_name) > 1:
+                source_class = long_name[-1]
+                source_package = ".".join(long_name[:-1])
+            else:
+                continue
+
+            is_public = ent.kind().check("public")
+            is_private = ent.kind().check("private")
+            external_references = 0
+            for ref in ent.refs("Callby, Overrideby"):
+                if ".".join(long_name[:-1]) not in ref.ent().longname():
+                    external_references += 1
+
+            candidates.append(
+                {
+                    "source_package": source_package,
+                    "source_class": source_class,
+                    "method_name": method_name,
+                    "is_public": is_public,
+                    "is_private": is_private,
+                    "external_references": external_references,
+                }
+            )
+        _db.close()
+        return candidates
 
     def _rtype(self):
 
@@ -68,39 +177,121 @@ class GrammarClass:
         return None
 
     def _extractClass(self):
-        random_class, moved_filed, move_methods = self._searchClass()
-        source_class = random_class.simplename()
+        _db = und.open(self.udb_path)
+        params = {"udb_path": str(Path(self.udb_path))}
+        classes = _db.ents("Type Class ~Unknown ~Anonymous")
+        random_class = random.choice(classes)
+        params.update(
+            {
+                "source_class": random_class.simplename(),
+                "file_path": random_class.parent().longname()
+            }
+        )
+        class_fields = []
+        class_methods = []
+
+        for ref in random_class.refs("define", "variable"):
+            class_fields.append(ref.ent())
+
+        for ref in random_class.refs("define", "method"):
+            class_methods.append(ref.ent())
+
+        params.update(
+            {
+                "moved_fields": [ent.simplename() for ent in
+                                 random.sample(class_fields, random.randint(0, len(class_fields)))],
+                "moved_methods": [ent.simplename() for ent in
+                                  random.sample(class_methods, random.randint(0, len(class_methods)))],
+            }
+        )
+        _db.close()
+        print(params)
+        # params = random.choice(candidates)
+        _db.close()
         if ExtractClass.main(
             udb_path=self.udb_path,
-            file_path=random_class.parent().longname(),
-            source_class=source_class,
-            moved_fields=moved_filed,
-            moved_methods=move_methods,
+            file_path=params["file_path"],
+            source_class=params["source_class"],
+            moved_fields=params["moved_fields"],
+            moved_methods=params["moved_methods"],
         ):
             self.rf_list.append(
                 ProcedureModel(
                     refactoring_type="ExtractClass",
-                    source=source_class,
+                    source=params["source_class"],
                     target="",
-                    name=str(moved_filed),
+                    name=str(params["moved_fields"]),
+                    type="class",
+                )
+            )
+        else:
+            self.rf_list.append(
+                ProcedureModel(
+                    refactoring_type="ERROR => ExtractClass",
+                    source=params["source_class"],
+                    target="",
+                    name=str(params["moved_fields"]),
+                    type="class",
+                )
+            )
+
+    def _moveField(self):
+        _db = und.open(self.udb_path)
+        params = {"udb_path": str(Path(self.udb_path))}
+        random_field = random.choice(self.get_all_variables())
+        params.update(random_field)
+        classes = _db.ents("Class ~Unknown ~Anonymous ~TypeVariable ~Private ~Static")
+        random_class = (random.choice(classes)).longname().split(".")
+        target_package = None
+
+        """
+        target_class: str, target_package: str,
+        """
+        if len(random_class) == 1:
+            target_class = random_class[0]
+        elif len(random_class) > 1:
+            target_package = ".".join(random_class[:-1])
+            target_class = random_class[-1]
+        else:
+            return self._moveField()
+        params.update({"target_class": target_class, "target_package": target_package})
+        _db.close()
+        if MoveField.main(
+            source_class=random_class,
+            target_class=target_class,
+            udb_path=self.udb_path,
+            source_package="",
+            field_name=random_field,
+            target_package=target_package,
+        ):
+            self.rf_list.append(
+                ProcedureModel(
+                    refactoring_type="MoveField",
+                    source=random_class,
+                    target=target_class,
+                    name=str(random_field),
+                    type="class",
+                )
+            )
+        else:
+            self.rf_list.append(
+                ProcedureModel(
+                    refactoring_type="ERROR => MoveField",
+                    source=random_class,
+                    target=target_class,
+                    name=str(random_field),
                     type="class",
                 )
             )
 
     def _moveMethod(self):
-        random_class, moved_filed, move_methods = self._searchClass()
-        parent = random_class.parent()
-        long_name = parent.longname().split(".")
-        source_package = None
-        source_class = None
-        if len(long_name) == 1:
-            source_class = long_name[-1]
-        elif len(long_name) > 1:
-            source_class = long_name[-1]
-            source_package = ".".join(long_name[:-1])
-
+        _db = und.open(self.udb_path)
+        params = {"udb_path": str(Path(self.udb_path))}
+        random_method = random.choice(self.get_all_methods())
+        params.update(random_method)
+        classes = _db.ents("Class ~Unknown ~Anonymous ~TypeVariable ~Private ~Static")
+        random_class = (random.choice(classes)).longname().split(".")
         target_package = None
-        target_class = None
 
         """
         target_class: str, target_package: str,
@@ -111,23 +302,36 @@ class GrammarClass:
         elif len(random_class) > 1:
             target_package = ".".join(random_class[:-1])
             target_class = random_class[-1]
-        method_name = random.choice(move_methods)
+        else:
+            return self._moveField()
+        params.update({"target_class": target_class, "target_package": target_package})
+        _db.close()
 
         if MoveMethod.main(
-            source_class=source_class,
-            source_package=source_package,
-            target_class=target_class,
-            target_package=target_package,
-            method_name=method_name,
+            source_class=random_class,
+            source_package="",
+            target_class=params["target_class"],
+            target_package=params["target_package"],
+            method_name=random_method,
             udb_path=self.udb_path,
         ):
 
             self.rf_list.append(
                 ProcedureModel(
                     refactoring_type="MoveMethod",
-                    source=source_class,
+                    source=random_class,
                     target=target_class,
-                    name=method_name,
+                    name=random_method,
+                    type="Method",
+                )
+            )
+        else:
+            self.rf_list.append(
+                ProcedureModel(
+                    refactoring_type="ERROR => MoveMethod",
+                    source=random_class,
+                    target=target_class,
+                    name=random_method,
                     type="Method",
                 )
             )
@@ -184,15 +388,30 @@ class GrammarClass:
                         }
                     )
         candid = random.choice(candidates)
+        # print("UND PATH : ", self.udb_path)
+        # print("children classes : ", candid["children_classes"])
+        # print("method classes : ", candid["method_name"])
         _db.close()
         if PullUpMethod.main(
             udb_path=self.udb_path,
             children_classes=candid["children_classes"],
             method_name=candid["method_name"],
         ):
+            print("Before")
             self.rf_list.append(
                 ProcedureModel(
                     refactoring_type="PullUpMethod",
+                    source=candid["children_classes"],
+                    target="",
+                    name=candid["method_name"],
+                    type="Method",
+                )
+            )
+            print("after")
+        else:
+            self.rf_list.append(
+                ProcedureModel(
+                    refactoring_type=" ERROR => PullUpMethod",
                     source=candid["children_classes"],
                     target="",
                     name=candid["method_name"],
@@ -251,6 +470,16 @@ class GrammarClass:
                     source=candid["source_class"],
                     target=candid["target_classes"],
                     name=candid["method_name"],
+                    type="Method",
+                )
+            )
+        else:
+            self.rf_list.append(
+                ProcedureModel(
+                    refactoring_type="PushDownMethod",
+                    source=candid["source_class"],
+                    target=candid["target_classes"],
+                    name="ERROR",
                     type="Method",
                 )
             )
@@ -320,6 +549,7 @@ class GrammarClass:
             ent.simplename()
             for ent in random.sample(class_fields, random.randint(0, len(class_fields)))
         ]
+
         _db.close()
         return random_class, moved_filed, move_methods
 
