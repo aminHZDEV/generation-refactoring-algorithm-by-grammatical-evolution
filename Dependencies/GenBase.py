@@ -1,4 +1,4 @@
-from pymoo.core.callback import Callback
+
 from pymoo.core.crossover import Crossover
 from pymoo.core.duplicate import ElementwiseDuplicateElimination
 from pymoo.termination.default import DefaultMultiObjectiveTermination
@@ -7,45 +7,55 @@ from pymoo.optimize import minimize
 from pymoo.core.problem import Problem
 from pymoo.util.normalization import denormalize
 from pymoo.core.sampling import Sampling
-from numpy import np
+import numpy as np
 from datetime import datetime
-from random import randint
 import random
 from pymoo.algorithms.soo.nonconvex.ga import GA
 from copy import deepcopy
+from Dependencies.Utils import *
+from dotenv import dotenv_values
+from Dependencies.ClsUDBMetrics import ClsUDB_Metrics, DesignQualityAttributes
+from Dependencies.Grammar import GrammarClass
+
+
+
+actor_list = [None for _ in range(100)]
+
+udb_path = (
+    "Resources/und_db/" + dotenv_values().get("RESOURCES_PATH").split(" ")[0] + ".und"
+)
+project_path = (
+    "Resources/projects/" + dotenv_values().get("RESOURCES_PATH").split(" ")[0]
+)
+
+
+def calc_qmood_objectives(arr_):
+    qmood_quality_attributes = DesignQualityAttributes(udb_path=udb_path)
+    arr_[0] = qmood_quality_attributes.quality
+
 
 class ProblemSingleObjective(Problem):
     """
     The CodART single-objective optimization work with only one objective, testability:
     """
 
-    def __init__(self,
-                 n_objectives=1,
-                 n_refactorings_lowerbound=10,
-                 n_refactorings_upperbound=50,
-                 evaluate_in_parallel=False,
-                 mode='single'  # 'multi'
-                 ):
+    def __init__(
+        self,
+        n_objectives=1,
+        mode="single",  # 'multi'
+    ):
         """
         Args:
             n_objectives (int): Number of objectives
-            n_refactorings_lowerbound (int): The lower bound of the refactoring sequences
-            n_refactorings_upperbound (int): The upper bound of the refactoring sequences
             mode (str): 'single' or 'multi'
         """
 
-        super(ProblemSingleObjective, self).__init__(n_var=1, n_obj=1, n_constr=0)
-        self.n_refactorings_lowerbound = n_refactorings_lowerbound
-        self.n_refactorings_upperbound = n_refactorings_upperbound
-        self.evaluate_in_parallel = evaluate_in_parallel
+        super(ProblemSingleObjective, self).__init__(n_var=100, n_obj=1, n_constr=0)
+
         self.mode = mode
         self.n_obj_virtual = n_objectives
 
-    def _evaluate(self,
-                  x,  #
-                  out,
-                  *args,
-                  **kwargs):
+    def _evaluate(self, x, out, *args, **kwargs):  #
         """
         This method iterate over a population, execute the refactoring operations in each individual sequentially,
         and compute quality attributes for the refactored version of the program, as objectives of the search
@@ -53,61 +63,47 @@ class ProblemSingleObjective(Problem):
             x (Population): x is a matrix where each row is an individual, and each column a variable.\
                 We have one variable of type list (Individual) ==> x.shape = (len(Population), 1)
         """
-
+        cls_udb_metric_obj = ClsUDB_Metrics()
         objective_values = []
-        for k, individual_ in enumerate(x):
-            # Stage 0: Git restore
-            logger.debug("Executing git restore.")
-            git_restore(config.PROJECT_PATH)
-            logger.debug("Updating understand database after git restore.")
-            update_understand_database(config.UDB_PATH)
+        print("TEST X : ", x.shape)
+        # Stage 0: Git restore
+        print("Executing git restore.")
+        git_restore(project_path)
+        print("Updating understand database after git restore.")
+        cls_udb_metric_obj.update_understand_database(udb_path=udb_path)
 
-            # Stage 1: Execute all refactoring operations in the sequence x
-            logger.debug(f"Reached Individual with Size {len(individual_[0])}")
-            for refactoring_operation in individual_[0]:
-                refactoring_operation.do_refactoring()
-                # Update Understand DB
-                logger.debug(f"Updating understand database after {refactoring_operation.name}.")
-                update_understand_database(config.UDB_PATH)
+        # Stage 1: Execute all refactoring operations in the sequence x
+        print(f"Reached Individual with Size {len(x)}")
 
-            # Stage 2:
-            if self.mode == 'single':
-                # Stage 2 (Single objective mode): Considering only one quality attribute, e.g., testability
-                score = testability_main(config.UDB_PATH, initial_value=config.CURRENT_METRICS.get("TEST", 1.0))
-            else:
-                # Stage 2 (Multi-objective mode): Considering one objective based on average of 8 objective
-                arr = Array('d', range(self.n_obj_virtual))
-                if self.evaluate_in_parallel:
-                    # Stage 2 (Multi-objective mode, parallel): Computing quality attributes
-                    p1 = Process(target=calc_qmood_objectives, args=(arr,))
-                    if self.n_obj_virtual == 8:
-                        p2 = Process(target=calc_testability_objective, args=(config.UDB_PATH, arr,))
-                        p3 = Process(target=calc_modularity_objective, args=(config.UDB_PATH, arr,))
-                        p1.start(), p2.start(), p3.start()
-                        p1.join(), p2.join(), p3.join()
-                    else:
-                        p1.start()
-                        p1.join()
-                    score = sum([i for i in arr]) / self.n_obj_virtual
-                else:
-                    # Stage 2 (Multi-objective mode, sequential): Computing quality attributes
-                    qmood_quality_attributes = DesignQualityAttributes(udb_path=config.UDB_PATH)
-                    o1 = qmood_quality_attributes.average_sum
-                    if self.n_obj_virtual == 8:
-                        o2 = testability_main(config.UDB_PATH, initial_value=config.CURRENT_METRICS.get("TEST", 1.0))
-                        o3 = modularity_main(config.UDB_PATH, initial_value=config.CURRENT_METRICS.get("MODULE", 1.0))
-                    else:
-                        o2 = 0
-                        o3 = 0
-                    del qmood_quality_attributes
-                    score = (o1 * 6. + o2 + o3) / self.n_obj_virtual
+        # for refactoring_operation in x:
+        gc_obj = GrammarClass(
+            project_path=project_path,
+            udb_path=udb_path,
+            chromosome=x,
+        )
+        actor_list = gc_obj._procedure()
+        print("actor list : ", actor_list)
+        # Update Understand DB
+        if actor_list is not None:
+            for i, item in enumerate(actor_list):
+                print(
+                    f"Updating understand database after {i} - \n REFACTORING : {item.refactoring} \n NAME : {item.name} \n TYPE : {item.type} \n SOURCE : {item.source} \n TARGET : {item.target} \n"
+                )
+        else:
+            print(f"not found any refactoring in {x} chromosome")
+        cls_udb_metric_obj.update_understand_database(udb_path=udb_path)
+        qmood_quality_attributes = DesignQualityAttributes(udb_path=udb_path)
+        o1 = qmood_quality_attributes.quality
+        del qmood_quality_attributes
+        score = o1
 
-            # Stage 3: Marshal objectives into vector
-            objective_values.append([-1 * score])
-            logger.info(f"Objective values for individual {k} in mode {self.mode}: {[-1 * score]}")
+        # Stage 3: Marshal objectives into vector
+        objective_values.append([-1 * score])
+        print(f"Objective values for individual : {[-1 * score]}")
 
         # Stage 4: Marshal all objectives into out dictionary
-        out['F'] = np.array(objective_values, dtype=float)
+        out["F"] = np.array(objective_values, dtype=int)
+
 
 def is_equal_2_refactorings_list(a, b):
     """
@@ -115,21 +111,26 @@ def is_equal_2_refactorings_list(a, b):
     Otherwise, it returns False.
     The duplicate instances are removed from population at each generation.
     Only one instance is held to speed up the search algorithm
+    < procedure >: := < rtype > < procedure > | < rtype >
+    < rtype >: := < extractClass > | < moveMethod > | < pullUpMethod > | < pushDownMethod > | < inlineClass >
     """
 
-    if len(a.X[0]) != len(b.X[0]):
+    a = a.X
+    b = b.X
+
+    if len(a.tolist()) != len(b.tolist()):
         return False
-    for i, ro in enumerate(a.X[0]):
-        if ro.name != b.X[0][i].name:
-            return False
-        if ro.params != b.X[0][i].params:
-            return False
-    return True
+    for i in range(1, len(a)):
+        if (actor_list[a[0]] is not None) and (actor_list[b[0]] is not None):
+            if a[i] == b[i] and actor_list[a[0]] is actor_list[b[0]]:
+                return True
+    return False
+
 
 class IntegerMutation(Mutation):
     """
-        Select an individual to mutate with mutation probability.
-        Only flip one refactoring operation in the selected individual.
+    Select an individual to mutate with mutation probability.
+    Only flip one refactoring operation in the selected individual.
     """
 
     def __init__(self, prob=0.01, initializer: list = None):
@@ -143,6 +144,7 @@ class IntegerMutation(Mutation):
         self._initializer = initializer
 
     def _do(self, problem, X, **kwargs):
+        print("In mutation000000000000000000000000000000000")
         for i, individual in enumerate(X):
             r = np.random.random()
             # with a probability of `mutation_probability` replace the refactoring operation with new one
@@ -152,32 +154,33 @@ class IntegerMutation(Mutation):
                 random_chromosome = random.choice(self._initializer)
                 item = random.choice(random_chromosome)
                 X[i][0][j] = deepcopy(item)
+                print("Mutation : ", X)
 
         return X
 
-class SinglePointCrossover(Crossover):
 
+class SinglePointCrossover(Crossover):
     def __init__(self, prob=0.9):
 
         # Define the crossover: number of parents, number of offsprings, and cross-over probability
         super().__init__(n_parents=2, n_offsprings=2, prob=prob)
 
     def _do(self, problem, X, **kwargs):
-
+        print("in single point =============================")
         # The input of has the following shape (n_parents, n_matings, n_var)
-        _, n_matings, n_var = X.shape
-
+        n_matings, n_var = X.shape
+        print("n_matings : ", n_matings)
+        print("n_var : ", n_var)
         # The output will be with the shape (n_offsprings, n_matings, n_var)
         # Because there the number of parents and offsprings are equal it keeps the shape of X
-        Y = np.full_like(X, None, dtype=object)
-
+        Y = np.full_like(X, dtype=int)
 
         # for each mating provided
         for k in range(n_matings):
             # get the first and the second parent (a and b are instance of individuals)
-            a, b = X[0, k, 0], X[1, k, 0]
+            a, b = X[0], X[1]
 
-            len_min = min(len(a), len(b))
+            len_min = min(len(a) - 1, len(b) - 1)
             cross_point_1 = random.randint(1, int(len_min * 0.30))
             cross_point_2 = random.randint(int(len_min * 0.70), len_min - 1)
             if random.random() < 0.5:
@@ -188,36 +191,51 @@ class SinglePointCrossover(Crossover):
             offspring_a = []
             offspring_b = []
             for i in range(0, cross_point_final):
-                offspring_a.append(deepcopy(a[i]))
-                offspring_b.append(deepcopy(b[i]))
+                offspring_a.append(deepcopy(a[i][0]))
+                offspring_b.append(deepcopy(b[i][0]))
 
             for i in range(cross_point_final, len_min):
-                offspring_a.append(deepcopy(b[i]))
-                offspring_b.append(deepcopy(a[i]))
+                offspring_a.append(deepcopy(b[i][0]))
+                offspring_b.append(deepcopy(a[i][0]))
 
             if len(b) > len(a):
                 for i in range(len(a), len(b)):
-                    offspring_a.append(deepcopy(b[i]))
+                    offspring_a.append(deepcopy(b[i][0]))
             else:
                 for i in range(len(b), len(a)):
-                    offspring_b.append(deepcopy(a[i]))
+                    offspring_b.append(deepcopy(a[i][0]))
 
-            Y[0, k, 0], Y[1, k, 0] = offspring_a, offspring_b
-
+            Y[0, k], Y[1, k] = offspring_a, offspring_b
         return Y
 
+
 class FloatRandomSampling(Sampling):
-    def random_by_bounds(self, n_var, xl, xu, n_samples=1):
+    def random_by_bounds(self, n_var, xl, xu, n_samples=20):
         val = np.random.random((n_samples, n_var))
         return denormalize(val, xl, xu)
-    def random(self, problem, n_samples=1):
-        return self.random_by_bounds(problem.n_var, problem.xl, problem.xu, n_samples=n_samples)
+
+    def random_between(self, n_var, xl, xu, n_samples=20):
+        val = np.random.uniform(low=2.0, high=100.0, size=(n_samples))
+        return denormalize(val, xl, xu)
+
+    def random(self, problem, n_samples=20):
+        return self.random_between(
+            problem.n_var, problem.xl, problem.xu, n_samples=n_samples
+        )
+
     def _do(self, problem, n_samples, **kwargs):
         return self.random(problem, n_samples=n_samples)
+
+
 class IntegerRandomSampling(FloatRandomSampling):
     def _do(self, problem, n_samples, **kwargs):
         X = super()._do(problem, n_samples, **kwargs)
-        return np.around(X).astype(int)
+        mylist = [np.around(X).astype(int).tolist() for _ in range(n_samples)]
+        for i in range(len(mylist)):
+            mylist[i].insert(0, i)
+        return mylist
+
+
 class GenBase:
     """
     MODE = 1
@@ -242,12 +260,25 @@ class GenBase:
         duplication_probabilities: float = 0.01,
         selection_operator: str = "BT",
         maximum_gene_size: int = 20,
-        **kwargs
+        **kwargs,
     ):
         self.mode = mod
         if self.mode == 1:
             self.pop_size = pop_size
-            self.population = [randint(0, 500) for i in range(0, self.pop_size)]
+            self.population = [
+                (
+                    np.around(
+                        denormalize(
+                            np.random.uniform(low=2.0, high=100.0, size=20), None, None
+                        )
+                    )
+                    .astype(int)
+                    .tolist()
+                )
+                for i in range(self.pop_size)
+            ]
+            for i in range(len(self.population)):
+                self.population[i].insert(0, i)
             self.ge_fitness_evaluations = ge_fitness_evaluations
             self.crossover_operator = crossover_operator
             self.mutation_operator = mutation_operator
@@ -260,24 +291,21 @@ class GenBase:
 
     def run(self):
         if self.mode == 1:
-           ga = GA(
+            ga = GA(
                 pop_size=self.pop_size,
-                sampling=IntegerRandomSampling,
+                sampling=IntegerRandomSampling(),
                 crossover=SinglePointCrossover(prob=self.crossover_probability),
-                mutation=IntegerMutation(prob=self.mutation, initializer=self.population),
-                eliminate_duplicates=ElementwiseDuplicateElimination(cmp_func=is_equal_2_refactorings_list),
+                mutation=IntegerMutation(
+                    prob=self.mutation, initializer=self.population
+                ),
+                eliminate_duplicates=ElementwiseDuplicateElimination(
+                    cmp_func=is_equal_2_refactorings_list
+                ),
                 n_gen=self.maximum_gene_size,
-
             )
 
             my_termination = DefaultMultiObjectiveTermination(
-                x_tol=None,
-                cv_tol=None,
-                f_tol=0.0015,
-                nth_gen=5,
-                n_last=5,
-                n_max_gen=1000,  # about 1000 - 1400
-                n_max_evals=1e6
+                xtol=0.0005, cvtol=1e-8, ftol=0.0015, n_skip=5
             )
 
             # Do optimization for various problems with various algorithms
@@ -292,13 +320,17 @@ class GenBase:
                 save_history=False,
             )
 
-            print(f"***** Algorithm was finished in {res.algorithm.n_gen + 20} generations *****")
+            print(
+                f"***** Algorithm was finished in {res.algorithm.n_gen + 20} generations *****"
+            )
             print(" ")
             print("============ time information ============")
-            print(f"Start time: {datetime.fromtimestamp(res.start_time).strftime('%Y-%m-%d %H:%M:%S')}")
-            print(f"End time: {datetime.fromtimestamp(res.end_time).strftime('%Y-%m-%d %H:%M:%S')}")
+            print(
+                f"Start time: {datetime.fromtimestamp(res.start_time).strftime('%Y-%m-%d %H:%M:%S')}"
+            )
+            print(
+                f"End time: {datetime.fromtimestamp(res.end_time).strftime('%Y-%m-%d %H:%M:%S')}"
+            )
             print(f"Execution time in seconds: {res.exec_time}")
             print(f"Execution time in minutes: {res.exec_time / 60}")
             print(f"Execution time in hours: {res.exec_time / (60 * 60)}")
-
-

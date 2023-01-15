@@ -1,6 +1,5 @@
 from git import Repo, RemoteProgress
 import logging
-from urlextract import URLExtract
 from os import getcwd
 from os import system
 import subprocess
@@ -18,22 +17,20 @@ class Progress(RemoteProgress):
 class DataSetsProvider:
     def __init__(self):
         logging.basicConfig(level=logging.INFO)
-        self.__extractor = URLExtract()
-        self.__gitUrlList = self.__extractor.find_urls(
-            open(file="Resources/urls_dataset.txt").read()
-        )
+        # self.__extractor = URLExtract()
+        self.__gitUrlList = open(file="Resources/urls_dataset.txt").readlines()
         self.__ResourcePath = dotenv_values().get("RESOURCES_PATH").split(" ")
 
     def get_datasets(self):
-        # clone git rpoes in urls_dataset.txt
+        # clone git rpoes in urls_dataset.txt and detch it to the true sha1 commit
         print(self.__gitUrlList)
         for item in self.__gitUrlList:
             print(item)
             Repo.clone_from(
-                url=item,
-                to_path="../Resources",
+                url=item.split(" ")[0],
+                to_path="Resources/projects/" + item.split(" ")[2],
                 progress=Progress(),
-            )
+            ).head.reset(commit=item.split(" ")[1])
 
     def get_resource_path(self):
         print(self.__ResourcePath)

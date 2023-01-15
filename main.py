@@ -1,9 +1,16 @@
 from Dependencies.DatasetsProvider import DataSetsProvider
-from Dependencies.ClsUDB_Metrics import ClsUDB_Metrics
+from Dependencies.ClsUDBMetrics import ClsUDB_Metrics
 from Dependencies.GenBase import GenBase
 
 ds_instance = DataSetsProvider()
 cu_instance = ClsUDB_Metrics()
+
+# clone projects
+# try:
+#     ds_instance.get_datasets()
+# except Exception as e:
+#     print("ERROR : ", e)
+
 
 # create .und db and refactoring .json file
 # for item in ds_instance.get_resource_path():
@@ -28,3 +35,4 @@ cu_instance = ClsUDB_Metrics()
 
 # GENBASE
 a = GenBase()
+a.run()
