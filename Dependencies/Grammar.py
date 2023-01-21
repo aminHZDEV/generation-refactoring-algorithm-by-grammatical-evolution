@@ -184,7 +184,7 @@ class GrammarClass:
         params.update(
             {
                 "source_class": random_class.simplename(),
-                "file_path": random_class.parent().longname()
+                "file_path": random_class.parent().longname(),
             }
         )
         class_fields = []
@@ -198,16 +198,24 @@ class GrammarClass:
 
         params.update(
             {
-                "moved_fields": [ent.simplename() for ent in
-                                 random.sample(class_fields, random.randint(0, len(class_fields)))],
-                "moved_methods": [ent.simplename() for ent in
-                                  random.sample(class_methods, random.randint(0, len(class_methods)))],
+                "moved_fields": [
+                    ent.simplename()
+                    for ent in random.sample(
+                        class_fields, random.randint(0, len(class_fields))
+                    )
+                ],
+                "moved_methods": [
+                    ent.simplename()
+                    for ent in random.sample(
+                        class_methods, random.randint(0, len(class_methods))
+                    )
+                ],
             }
         )
         _db.close()
-        print(params)
+        print("Extract class parmas : ", params)
         # params = random.choice(candidates)
-        _db.close()
+
         if ExtractClass.main(
             udb_path=self.udb_path,
             file_path=params["file_path"],
@@ -236,9 +244,10 @@ class GrammarClass:
             )
 
     def _moveField(self):
+
+        random_field = random.choice(self.get_all_variables())
         _db = und.open(self.udb_path)
         params = {"udb_path": str(Path(self.udb_path))}
-        random_field = random.choice(self.get_all_variables())
         params.update(random_field)
         classes = _db.ents("Class ~Unknown ~Anonymous ~TypeVariable ~Private ~Static")
         random_class = (random.choice(classes)).longname().split(".")
@@ -253,6 +262,7 @@ class GrammarClass:
             target_package = ".".join(random_class[:-1])
             target_class = random_class[-1]
         else:
+            print("go in move field")
             return self._moveField()
         params.update({"target_class": target_class, "target_package": target_package})
         _db.close()
@@ -285,9 +295,10 @@ class GrammarClass:
             )
 
     def _moveMethod(self):
+
+        random_method = random.choice(self.get_all_methods())
         _db = und.open(self.udb_path)
         params = {"udb_path": str(Path(self.udb_path))}
-        random_method = random.choice(self.get_all_methods())
         params.update(random_method)
         classes = _db.ents("Class ~Unknown ~Anonymous ~TypeVariable ~Private ~Static")
         random_class = (random.choice(classes)).longname().split(".")
@@ -302,13 +313,18 @@ class GrammarClass:
         elif len(random_class) > 1:
             target_package = ".".join(random_class[:-1])
             target_class = random_class[-1]
-        else:
-            return self._moveField()
-        params.update({"target_class": target_class, "target_package": target_package})
-        _db.close()
 
+        else:
+            print("GO FOR MOVE FIELD IN MOVE METHOD")
+            _db.close()
+            return self._moveMethod()
+
+        params.update({"target_class": target_class, "target_package": target_package})
+
+        _db.close()
+        print("MOVE METHOD PARAMS : ", params)
         if MoveMethod.main(
-            source_class=random_class,
+            source_class="",
             source_package="",
             target_class=params["target_class"],
             target_package=params["target_package"],
@@ -325,7 +341,9 @@ class GrammarClass:
                     type="Method",
                 )
             )
+
         else:
+
             self.rf_list.append(
                 ProcedureModel(
                     refactoring_type="ERROR => MoveMethod",
@@ -388,9 +406,6 @@ class GrammarClass:
                         }
                     )
         candid = random.choice(candidates)
-        # print("UND PATH : ", self.udb_path)
-        # print("children classes : ", candid["children_classes"])
-        # print("method classes : ", candid["method_name"])
         _db.close()
         if PullUpMethod.main(
             udb_path=self.udb_path,
@@ -508,6 +523,8 @@ class GrammarClass:
                     children, random.randint(2, len(children))
                 )
                 candidates.append(params)
+        _db.close()
+
         try:
             if PullUpConstructor.main(
                 udb_path=self.udb_path,
@@ -526,7 +543,6 @@ class GrammarClass:
                 )
         except Exception as e:
             print("PullUpConstructor ERROR : ", e)
-        _db.close()
 
     def _searchClass(self):
         _db = und.open(self.udb_path)

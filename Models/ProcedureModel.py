@@ -18,39 +18,39 @@ class ProcedureModel:
 
     @property
     def source(self):
-        return self._source_class
+        return self._source
 
     @property
     def target(self):
-        return self._target_class
+        return self._target
 
     @property
     def type(self):
-        return self._source_class
+        return self._type
 
-    @source.setter
-    def source(self, a):
-        self._source_class = a
-
-    @target.setter
-    def target(self, a):
-        self._target_class = a
-
-    @type.setter
-    def type(self, a):
-        self._type = a
+    @property
+    def refactoring(self):
+        return self._refactoring
 
     @property
     def name(self):
         return self._name
 
-    @name.setter
-    def name(self, a):
-        self._name = a
+    @source.setter
+    def source(self, a):
+        self._source = a
 
-    @property
-    def refactoring(self):
-        return self._refactoring
+    @target.setter
+    def target(self, a):
+        self._target = a
+
+    @type.setter
+    def type(self, a):
+        self._type = a
+
+    @refactoring.setter
+    def refactoring(self, a):
+        self._refactoring = a
 
     @refactoring.setter
     def refactoring(self, a):

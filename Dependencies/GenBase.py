@@ -16,7 +16,6 @@ from dotenv import dotenv_values
 from Dependencies.ClsUDBMetrics import ClsUDB_Metrics, DesignQualityAttributes
 from Dependencies.Grammar import GrammarClass
 
-
 actor_list = []
 
 udb_path = (
@@ -83,14 +82,13 @@ class ProblemSingleObjective(Problem):
             actor_list.append(
                 {"id": x[i][0], "obj": deepcopy(gc_obj._procedure()), "score": 0.0}
             )
-            print("actor list : ", actor_list)
             # Update Understand DB
             if actor_list is not None:
                 for i, item in enumerate(actor_list):
                     try:
-                        for j in item:
+                        for j in item["obj"]:
                             print(
-                                f"Updating understand database after {i} - \n REFACTORING : {j['obj'].refactoring} \n NAME : {j['obj'].name} \n TYPE : {j['obj'].type} \n SOURCE : {j['obj'].source} \n TARGET : {j['obj'].target} \n"
+                                f"Updating understand database after {i} - \n REFACTORING : {j.refactoring} \n NAME : {j.name} \n TYPE : {j.type} \n SOURCE : {j.source} \n TARGET : {j.target} \n"
                             )
                     except:
                         continue
@@ -152,68 +150,78 @@ class IntegerMutation(Mutation):
         self._initializer = initializer
 
     def _do(self, problem, X, **kwargs):
-        print("In mutation000000000000000000000000000000000")
-        for i, individual in enumerate(X[:][1:]):
+        for i, individual in enumerate(X[:]):
             r = np.random.random()
             # with a probability of `mutation_probability` replace the refactoring operation with new one
             if r < self.mutation_probability:
                 # j is a random index in individual
-                j = random.randint(1, len(individual[0]) - 1)
-                random_chromosome = random.choice(self._initializer)
-                item = random.choice(random_chromosome)
+                j = random.randint(1, len(individual) - 1)
+                item = random.choice(self._initializer)
                 X[i][j] = deepcopy(item)
-                print("Mutation : ", X)
+
         return X
 
 
 class SinglePointCrossover(Crossover):
     def __init__(self, prob=0.9):
-
         # Define the crossover: number of parents, number of offsprings, and cross-over probability
         super().__init__(n_parents=2, n_offsprings=2, prob=prob)
 
     def _do(self, problem, X, **kwargs):
-        print("in single point =============================")
+        # print("in single point =============================")
         # The input of has the following shape (n_parents, n_matings, n_var)
-        n_matings, n_var = X.shape
-        print("n_matings : ", n_matings)
-        print("n_var : ", n_var)
+
+        X = np.array(X)
+
+        n_offsprings, n_matings, n_var = X.shape
+        # print("n_matings : ", n_matings)
+        # print("n_var : ", n_var)
         # The output will be with the shape (n_offsprings, n_matings, n_var)
         # Because there the number of parents and offsprings are equal it keeps the shape of X
-        Y = np.full_like(X, dtype=int)
-        print("Y : ", Y)
-        # for each mating provided
+        Y = np.full_like(X, None, dtype=object)
+
         for k in range(n_matings):
             # get the first and the second parent (a and b are instance of individuals)
-            a, b = X[0][1:], X[1][1:]
-            id_a, id_b = X[0][0], X[1][0]
+            a, b = X[0, k], X[1, k]
+            # print("### a", a)
+            # print("### b", b)
+            # print("len a", len(a))
+            # print("len b", len(b))
 
-            len_min = min(len(a) - 1, len(b) - 1)
+            len_min = min(len(a), len(b))
             cross_point_1 = random.randint(1, int(len_min * 0.30))
             cross_point_2 = random.randint(int(len_min * 0.70), len_min - 1)
             if random.random() < 0.5:
                 cross_point_final = cross_point_1
             else:
                 cross_point_final = cross_point_2
-
+            # print(f"cross_point_final: {cross_point_final}")
             offspring_a = []
             offspring_b = []
             for i in range(0, cross_point_final):
-                offspring_a.append(deepcopy(a[i][0]))
-                offspring_b.append(deepcopy(b[i][0]))
+                offspring_a.append(deepcopy(a[i]))
+                offspring_b.append(deepcopy(b[i]))
 
             for i in range(cross_point_final, len_min):
-                offspring_a.append(deepcopy(b[i][0]))
-                offspring_b.append(deepcopy(a[i][0]))
+                offspring_a.append(deepcopy(b[i]))
+                offspring_b.append(deepcopy(a[i]))
 
             if len(b) > len(a):
                 for i in range(len(a), len(b)):
-                    offspring_a.append(deepcopy(b[i][0]))
+                    offspring_a.append(deepcopy(b[i]))
             else:
                 for i in range(len(b), len(a)):
-                    offspring_b.append(deepcopy(a[i][0]))
+                    offspring_b.append(deepcopy(a[i]))
+            # print("$$$ offspring_a", offspring_a)
+            # print("$$$ offspring_b", offspring_b)
+            # print("len offspring_a", len(offspring_a))
+            # print("len offspring_b", len(offspring_b))
 
-            Y[0], Y[1] = offspring_a.insert(0, id_a), offspring_b.insert(0, id_b)
+            # Join offsprings to offspring population Y
+            Y[0, k], Y[1, k] = offspring_a, offspring_b
+
+            # quit()
+
         return Y
 
 
@@ -223,7 +231,7 @@ class FloatRandomSampling(Sampling):
         return denormalize(val, xl, xu)
 
     def random_between(self, n_var, xl, xu, n_samples=20):
-        val = np.random.uniform(low=2.0, high=100.0, size=(100, n_samples))
+        val = np.random.uniform(low=2.0, high=100.0, size=(3, n_samples))
         return denormalize(val, xl, xu)
 
     def random(self, problem, n_samples=20):
@@ -327,6 +335,19 @@ class GenBase:
                 copy_termination=True,
                 save_history=False,
             )
+            for i, item in enumerate(actor_list):
+                try:
+                    print("+" * 50)
+                    print("ID : ", item["id"])
+                    print("SCORE : ", item["score"])
+                    for j in item["obj"]:
+                        print(
+                            f"REFACTORING : {j.refactoring} \n NAME : {j.name} \n TYPE : {j.type} \n SOURCE : {j.source} \n TARGET : {j.target} \n",
+                            "*" * 50,
+                        )
+
+                except Exception as e:
+                    print("WARNING : ", e)
 
             print(
                 f"***** Algorithm was finished in {res.algorithm.n_gen + 20} generations *****"

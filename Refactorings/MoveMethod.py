@@ -299,11 +299,13 @@ def main(
     import_statement = None
     if source_package != target_package:
         import_statement = f"\nimport {target_package}.{target_class};"
-    instance_name = target_class.lower() + "ByCodArt"
+    instance_name = target_class.lower() + "REFACTORER"
+    print("\n\nBRFORE ERROR : ", udb_path)
+    print("\n\nBRFORE ERROR source class: ", source_class)
     db = und.open(udb_path)
     method_map, class_ent = get_source_class_map(db, source_class)
     if class_ent is None:
-        logger.error("Class entity is None")
+        print("Class entity is None")
         return False
 
     # Strong overlay precondition
@@ -317,18 +319,18 @@ def main(
     if len(method_ent) >= 1:
         method_ent = method_ent[0]
     else:
-        logger.error("Entity not found.")
+        print("Entity not found.")
         db.close()
         return False
 
     if method_ent.simplename() != method_name:
-        logger.error("Can not move method duo to duplicated entities.")
-        logger.info(f"{method_ent}, {method_ent.kindname()}")
+        print("Can not move method duo to duplicated entities.")
+        print(f"{method_ent}, {method_ent.kindname()}")
         db.close()
         return False
 
     if source_package == target_package and source_class == target_class:
-        logger.error("Can not move to self.")
+        print("Can not move to self.")
         db.close()
         return False
 
@@ -353,9 +355,9 @@ def main(
             0
         ].longname()
     except IndexError:
-        logger.error("This is a nested method.")
-        logger.info(f"{source_package}.{source_class}.java")
-        logger.info(f"{target_package}.{target_class}.java")
+        print("This is a nested method.")
+        print(f"{source_package}.{source_class}.java")
+        print(f"{target_package}.{target_class}.java")
         db.close()
         return False
 
@@ -369,7 +371,7 @@ def main(
     )
 
     if not listener.is_valid:
-        logger.error(
+        print(
             f"Can not move method because there is a cycle between {source_class}, {target_class}"
         )
         # db.close()

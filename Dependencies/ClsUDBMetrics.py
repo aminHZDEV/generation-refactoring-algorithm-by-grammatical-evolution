@@ -294,4 +294,7 @@ class DesignQualityAttributes:
 
     @property
     def quality(self):
-        return self.CAMC / (self.CAMC + (self.DCC / 2))
+        divider = self.CAMC + (self.DCC / 2)
+        if divider == 0.0:
+            divider = 0.01
+        return self.CAMC / divider
