@@ -13,9 +13,14 @@ from pymoo.algorithms.soo.nonconvex.ga import GA
 from copy import deepcopy
 from Dependencies.Utils import *
 from dotenv import dotenv_values
-from Dependencies.ClsUDBMetrics import ClsUDB_Metrics, DesignQualityAttributes
+from Dependencies.ClsUDBMetrics import (
+    ClsUDB_Metrics,
+    DesignQualityAttributes,
+    Similarity,
+)
 from Dependencies.Grammar import GrammarClass
 
+final_list = []
 actor_list = []
 
 udb_path = (
@@ -39,7 +44,7 @@ class ProblemSingleObjective(Problem):
     def __init__(
         self,
         n_objectives=1,
-        mode="single",  # 'multi'
+        mode: int = 2,  # 'multi'
     ):
         """
         Args:
@@ -47,7 +52,7 @@ class ProblemSingleObjective(Problem):
             mode (str): 'single' or 'multi'
         """
 
-        super(ProblemSingleObjective, self).__init__(n_var=21, n_obj=1, n_constr=0)
+        super(ProblemSingleObjective, self).__init__(n_var=1, n_obj=1, n_constr=0)
 
         self.mode = mode
         self.n_obj_virtual = n_objectives
@@ -68,36 +73,61 @@ class ProblemSingleObjective(Problem):
         git_restore(project_path)
         print("Updating understand database after git restore.")
         cls_udb_metric_obj.update_understand_database(udb_path=udb_path)
-
         # Stage 1: Execute all refactoring operations in the sequence x
         print(f"Reached Individual with Size {len(x)}")
-
+        actor_list = []
+        gc_obj = None
         # for refactoring_operation in x:
-        for i, item in enumerate(x):
-            gc_obj = GrammarClass(
-                project_path=project_path,
-                udb_path=udb_path,
-                chromosome=item[1:],
-            )
-            actor_list.append(
-                {"id": x[i][0], "obj": deepcopy(gc_obj._procedure()), "score": 0.0}
-            )
-            # Update Understand DB
-            if actor_list is not None:
-                for i, item in enumerate(actor_list):
-                    try:
-                        for j in item["obj"]:
-                            print(
-                                f"Updating understand database after {i} - \n REFACTORING : {j.refactoring} \n NAME : {j.name} \n TYPE : {j.type} \n SOURCE : {j.source} \n TARGET : {j.target} \n"
-                            )
-                    except:
-                        continue
-            else:
-                print(f"not found any refactoring in {x} chromosome")
+        for c, item in enumerate(x):
+            for z, j in enumerate(item[0]):
+                print("z : ", z)
+                print("j : ", j)
+                print(j[0])
+                gc_obj = GrammarClass(
+                    project_path=project_path,
+                    udb_path=udb_path,
+                    chromosome=j[1:],
+                )
+
+                actor_list.append(
+                    {
+                        "id": j[0],
+                        "obj": deepcopy(gc_obj._procedure()),
+                        "score": 0.0,
+                    }
+                )
+                # Update Understand DB
+                if actor_list is not None:
+                    for i, item in enumerate(actor_list):
+                        try:
+                            for j in item["obj"]:
+                                print(
+                                    f"Updating understand database after {i} - \n REFACTORING : {j.refactoring} \n NAME : {j.name} \n TYPE : {j.type} \n SOURCE : {j.source} \n TARGET : {j.target} \n"
+                                )
+                        except:
+                            continue
+                else:
+                    print(f"not found any refactoring in {x} chromosome")
+
             cls_udb_metric_obj.update_understand_database(udb_path=udb_path)
-            qmood_quality_attributes = DesignQualityAttributes(udb_path=udb_path)
-            o1 = qmood_quality_attributes.quality
+            if self.mode == 2:
+                # calculate similarity and mq together
+                sim = 0.0
+                s = Similarity(
+                    mode=int(dotenv_values().get("MODE_SIM")),
+                    actors=actor_list,
+                    udb_path=udb_path,
+                )
+                sim = s.sim()
+                qmood_quality_attributes = DesignQualityAttributes(udb_path=udb_path)
+                o1 = 0.5 * (qmood_quality_attributes.quality + sim)
+            else:
+                # just calculate mq
+                qmood_quality_attributes = DesignQualityAttributes(udb_path=udb_path)
+                o1 = qmood_quality_attributes.quality
             del qmood_quality_attributes
+            print("o1 : ", o1)
+            print("o1 : ", type(o1))
             score = o1
 
             actor_list[len(actor_list) - 1]["score"] = deepcopy(score)
@@ -106,8 +136,9 @@ class ProblemSingleObjective(Problem):
             objective_values.append([-1 * score])
             print(f"Objective values for individual : {[-1 * score]}")
 
-        # Stage 4: Marshal all objectives into out dictionary
-        out["F"] = np.array(objective_values, dtype=int)
+            # Stage 4: Marshal all objectives into out dictionary
+            final_list.append(actor_list)
+            out["F"] = np.array(objective_values, dtype=int)
 
 
 def is_equal_2_refactorings_list(a, b):
@@ -117,7 +148,7 @@ def is_equal_2_refactorings_list(a, b):
     The duplicate instances are removed from population at each generation.
     Only one instance is held to speed up the search algorithm
     < procedure >: := < rtype > < procedure > | < rtype >
-    < rtype >: := < extractClass > | < moveMethod > | < pullUpMethod > | < pushDownMethod > | < inlineClass >
+    < rtype >: := < extractClass > | < moveMethod > | < pullUpMethod > | < pushDownMethod >
     """
 
     a = a.X
@@ -151,14 +182,15 @@ class IntegerMutation(Mutation):
 
     def _do(self, problem, X, **kwargs):
         for i, individual in enumerate(X[:]):
-            r = np.random.random()
-            # with a probability of `mutation_probability` replace the refactoring operation with new one
-            if r < self.mutation_probability:
-                # j is a random index in individual
-                j = random.randint(1, len(individual) - 1)
-                item = random.choice(self._initializer)
-                X[i][j] = deepcopy(item)
-
+            for j, ro in enumerate(individual):
+                r = np.random.random()
+                # with a probability of `mutation_probability` replace the refactoring operation with new one
+                if r < self.mutation_probability:
+                    # j is a random index in individual
+                    id = deepcopy(X[i][0][len(X[i][0]) - 1][0])
+                    random_chromosome = random.choice(self._initializer)
+                    random_chromosome.insert(0, int(id) + 1)
+                    X[i][0][j] = deepcopy(random_chromosome)
         return X
 
 
@@ -171,25 +203,30 @@ class SinglePointCrossover(Crossover):
         # print("in single point =============================")
         # The input of has the following shape (n_parents, n_matings, n_var)
 
-        X = np.array(X)
-
+        # X = np.array(X)
+        print("X.shape : ", X.shape)
         n_offsprings, n_matings, n_var = X.shape
         # print("n_matings : ", n_matings)
         # print("n_var : ", n_var)
-        # The output will be with the shape (n_offsprings, n_matings, n_var)
+        # The output will be with the shape (n_offsprings, n_matings, n_var, n_chromosome)
         # Because there the number of parents and offsprings are equal it keeps the shape of X
         Y = np.full_like(X, None, dtype=object)
 
         for k in range(n_matings):
+
             # get the first and the second parent (a and b are instance of individuals)
-            a, b = X[0, k], X[1, k]
+            a, b = X[0, k, 0], X[1, k, 0]
             # print("### a", a)
             # print("### b", b)
             # print("len a", len(a))
             # print("len b", len(b))
 
             len_min = min(len(a), len(b))
-            cross_point_1 = random.randint(1, int(len_min * 0.30))
+
+            if int(len_min * 0.30) <= 1:
+                cross_point_1 = 1
+            else:
+                cross_point_1 = random.randint(1, int(len_min * 0.30))
             cross_point_2 = random.randint(int(len_min * 0.70), len_min - 1)
             if random.random() < 0.5:
                 cross_point_final = cross_point_1
@@ -218,10 +255,13 @@ class SinglePointCrossover(Crossover):
             # print("len offspring_b", len(offspring_b))
 
             # Join offsprings to offspring population Y
-            Y[0, k], Y[1, k] = offspring_a, offspring_b
+            print("len(offspring_a) : ", len(offspring_a))
+            print("len(offspring_b) : ", len(offspring_b))
+            Y[0, k, 0], Y[1, k, 0] = offspring_a, offspring_b
 
             # quit()
 
+        print(Y.shape)
         return Y
 
 
@@ -231,7 +271,7 @@ class FloatRandomSampling(Sampling):
         return denormalize(val, xl, xu)
 
     def random_between(self, n_var, xl, xu, n_samples=20):
-        val = np.random.uniform(low=2.0, high=100.0, size=(3, n_samples))
+        val = np.random.uniform(low=2.0, high=100.0, size=(100, n_samples))
         return denormalize(val, xl, xu)
 
     def random(self, problem, n_samples=20):
@@ -249,8 +289,12 @@ class IntegerRandomSampling(FloatRandomSampling):
         mylist = np.round(X).astype(int)
         for i, item in enumerate(mylist):
             mylist[i, 0] = i
-            print(mylist[i])
-        return mylist
+        n_samples = 4
+        x = np.empty((n_samples, 1), dtype=object)
+        for i in range(n_samples):
+            x[i, 0] = deepcopy(random.choices(population=mylist, k=2))
+        print(x)
+        return x
 
 
 class GenBase:
@@ -285,7 +329,9 @@ class GenBase:
             self.population = (
                 np.around(
                     denormalize(
-                        np.random.uniform(low=2.0, high=100.0, size=20), None, None
+                        np.random.uniform(low=2.0, high=100.0, size=(100, 20)),
+                        None,
+                        None,
                     )
                 )
                 .astype(int)
@@ -325,8 +371,9 @@ class GenBase:
             )
 
             # Do optimization for various problems with various algorithms
+            # MODE 2 mq + sim | MODE 1 mq => read mode from .env file
             res = minimize(
-                problem=ProblemSingleObjective(),
+                problem=ProblemSingleObjective(mode=int(dotenv_values().get("MODE"))),
                 algorithm=ga,
                 termination=my_termination,
                 seed=1,
@@ -335,19 +382,20 @@ class GenBase:
                 copy_termination=True,
                 save_history=False,
             )
-            for i, item in enumerate(actor_list):
-                try:
-                    print("+" * 50)
-                    print("ID : ", item["id"])
-                    print("SCORE : ", item["score"])
-                    for j in item["obj"]:
-                        print(
-                            f"REFACTORING : {j.refactoring} \n NAME : {j.name} \n TYPE : {j.type} \n SOURCE : {j.source} \n TARGET : {j.target} \n",
-                            "*" * 50,
-                        )
+            for ac in final_list.reverse():
+                for i, item in enumerate(ac):
+                    try:
+                        print("+" * 50)
+                        print("ID : ", item["id"])
+                        print("SCORE : ", item["score"])
+                        for j in item["obj"]:
+                            print(
+                                f"REFACTORING : {j.refactoring} \n NAME : {j.name} \n TYPE : {j.type} \n SOURCE : {j.source} \n TARGET : {j.target} \n",
+                                "*" * 50,
+                            )
 
-                except Exception as e:
-                    print("WARNING : ", e)
+                    except Exception as e:
+                        print("WARNING : ", e)
 
             print(
                 f"***** Algorithm was finished in {res.algorithm.n_gen + 20} generations *****"

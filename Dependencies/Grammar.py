@@ -17,7 +17,7 @@ import re
 class GrammarClass:
     """
     < procedure >: := < rtype > < procedure > | < rtype >
-    < rtype >: := < extractClass > | < moveMethod > | < pullUpMethod > | < pushDownMethod > | < Pull Up Constructor >
+    < rtype >: := < extractClass > | < moveMethod > | < pullUpMethod > | < pushDownMethod >
     < extractClass >: := < searchClass >
     < moveMethod >: := < searchMethod > < searchClass >
     < pullUpMethod >: := < searchMethod > < searchClass >
@@ -160,7 +160,7 @@ class GrammarClass:
 
         if len(self.chromosome) > 1:
             print("TEST 04 : ")
-            num = self.chromosome[self.pvot] % 5
+            num = self.chromosome[self.pvot] % 4
             print("TEST 05 : ", num)
             self.pvot += 1
             if num == 0:
@@ -171,8 +171,8 @@ class GrammarClass:
                 return self._pullUpMethod()
             elif num == 3:
                 return self._pushDownMethod()
-            elif num == 4:
-                return self._pullUpConstructor()
+            # elif num == 4:
+            #     return self._pullUpConstructor()
 
         return None
 

@@ -5,7 +5,7 @@ class ProcedureModel:
     def __init__(
         self,
         refactoring_type: str = "",
-        source: str = "",
+        source: list = None,
         target: str = "",
         name: str = "",
         type: str = "",

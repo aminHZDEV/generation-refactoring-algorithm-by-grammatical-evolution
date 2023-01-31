@@ -26,11 +26,14 @@ class DataSetsProvider:
         print(self.__gitUrlList)
         for item in self.__gitUrlList:
             print(item)
-            Repo.clone_from(
-                url=item.split(" ")[0],
-                to_path="Resources/projects/" + item.split(" ")[2],
-                progress=Progress(),
-            ).head.reset(commit=item.split(" ")[1])
+            try:
+                Repo.clone_from(
+                    url=item.split(" ")[0],
+                    to_path="Resources/projects/" + item.split(" ")[2],
+                    progress=Progress(),
+                ).head.reset(commit=item.split(" ")[1])
+            except Exception as e:
+                print("ERROR : ", e)
 
     def get_resource_path(self):
         print(self.__ResourcePath)

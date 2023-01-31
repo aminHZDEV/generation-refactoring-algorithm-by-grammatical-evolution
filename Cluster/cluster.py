@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[20]:
+# In[1]:
 
 
 import pandas as pd
@@ -13,7 +13,7 @@ import numpy as np
 import json
 
 
-# In[21]:
+# In[2]:
 
 
 class NpEncoder(json.JSONEncoder):
@@ -27,7 +27,7 @@ class NpEncoder(json.JSONEncoder):
         return json.JSONEncoder.default(self, obj)
 
 
-# In[22]:
+# In[3]:
 
 
 def draw_ellipse(position, covariance, ax=None, **kwargs):
@@ -48,7 +48,7 @@ def draw_ellipse(position, covariance, ax=None, **kwargs):
         ax.add_patch(Ellipse(position, nsig * width, nsig * height, angle, **kwargs))
 
 
-# In[23]:
+# In[4]:
 
 
 def plot_gmm(gmm, X, label=True, ax=None):
@@ -65,7 +65,7 @@ def plot_gmm(gmm, X, label=True, ax=None):
         draw_ellipse(pos, covar, alpha=w * w_factor)
 
 
-# In[24]:
+# In[5]:
 
 
 ram = {
@@ -88,8 +88,7 @@ for filename in files:
     li.append(df)
 data = pd.concat(li, axis=0, ignore_index=True)
 
-
-# In[25]:
+# In[6]:
 
 
 # TODO METHODS
@@ -121,9 +120,9 @@ for item in data[0]:
                             "Method": item,
                             "MM": dim.loc[dim["Method"] == item]["MM"],
                             "PU": dim.loc[dim["Method"] == item]["PU"] + 1,
-                            "PD": dim.loc[dic["Method"] == item]["PD"],
-                            "EM": dim.lom[dic["Method"] == item]["EM"],
-                            "IM": dim.loc[dic["Method"] == item]["IM"],
+                            "PD": dim.loc[dim["Method"] == item]["PD"],
+                            "EM": dim.lom[dim["Method"] == item]["EM"],
+                            "IM": dim.loc[dim["Method"] == item]["IM"],
                         }
                     ),
                     ignore_index=True,
@@ -136,7 +135,7 @@ for item in data[0]:
                             "MM": dim.loc[dim["Method"] == item]["MM"],
                             "PU": dim.loc[dim["Method"] == item]["PU"],
                             "PD": dim.loc[dim["Method"] == item]["PD"] + 1,
-                            "EM": dim.loc[dic["Method"] == item]["EM"],
+                            "EM": dim.loc[dim["Method"] == item]["EM"],
                             "IM": dim.loc[dim["Method"] == item]["IM"],
                         }
                     ),
@@ -206,8 +205,7 @@ dim.to_csv(
 )
 dim
 
-
-# In[26]:
+# In[7]:
 
 
 dic = pd.read_csv("../Resources/csv_files/input_cluster/input_class.csv")
@@ -305,8 +303,24 @@ dic.to_csv(
 )
 dic
 
+# In[8]:
 
-# In[27]:
+
+# read metrics
+
+files = glob("../Resources/csv_files/metrics/*.csv")
+li = []
+for filename in files:
+    df = pd.read_csv(filename)
+    li.append(df)
+data_metrics = pd.concat(li, axis=0, ignore_index=True)
+data_metrics["Name"] = data_metrics["Name"].str.replace('"', "")
+data_metrics = data_metrics[:][:]
+data_metrics_class = data_metrics[data_metrics["Kind"].str.contains("Class") == True]
+data_metrics_method = data_metrics[data_metrics["Kind"].str.contains("Method") == True]
+data_metrics_method
+
+# In[9]:
 
 
 X = dic.iloc[:, 1:5]
@@ -327,17 +341,45 @@ model = GaussianMixture(
 # Fit the model and predict labels
 clust = model.fit(d)
 labels = model.predict(d)
-my_class_dict = {}
+my_class_dict = []
 for i, item in enumerate(np.unique(labels)):
     a = dic[labels == item]
-    my_class_dict.update(
+    a = data_metrics_class[data_metrics_class["Name"].isin(a["Class"])]
+    my_class_dict.append(
         {
-            i: [
-                {"EC": {"MAX": int(a.EC.max()), "MIN": int(a.EC.min())}},
-                {"MM": {"MAX": int(a.MM.max()), "MIN": int(a.MM.min())}},
-                {"PU": {"MAX": int(a.PU.max()), "MIN": int(a.PU.min())}},
-                {"PD": {"MAX": int(a.PU.max()), "MIN": int(a.PD.min())}},
-            ]
+            "CountClassBase": {
+                "MAX": int(a.CountClassBase.max()),
+                "MIN": int(a.CountClassBase.min()),
+            },
+            "CountClassCoupled": {
+                "MAX": int(a.CountClassCoupled.max()),
+                "MIN": int(a.CountClassCoupled.min()),
+            },
+            "CountClassDerived": {
+                "MAX": int(a.CountClassDerived.max()),
+                "MIN": int(a.CountClassDerived.min()),
+            },
+            "CountDeclMethod": {
+                "MAX": int(a.CountDeclMethod.max()),
+                "MIN": int(a.CountDeclMethod.min()),
+            },
+            "CountDeclMethodAll": {
+                "MAX": int(a.CountDeclMethodAll.max()),
+                "MIN": int(a.CountDeclMethodAll.min()),
+            },
+            "CountLineCode": {
+                "MAX": int(a.CountLineCode.max()),
+                "MIN": int(a.CountLineCode.min()),
+            },
+            "CountLineComment": {
+                "MAX": int(a.CountLineComment.max()),
+                "MIN": int(a.CountLineComment.min()),
+            },
+            "MaxInheritanceTree": {
+                "MAX": int(a.MaxInheritanceTree.max()),
+                "MIN": int(a.MaxInheritanceTree.min()),
+            },
+            "Class": a["Name"].tolist(),
         }
     )
 
@@ -356,25 +398,32 @@ model = GaussianMixture(
 # Fit the model and predict labels
 clust = model.fit(c)
 labels1 = model.predict(c)
-my_method_dict = {}
+my_method_dict = []
 for i, item in enumerate(np.unique(labels1)):
     a = dim[labels1 == item]
-    my_method_dict.update(
+    data_metrics_method["Name"] = data_metrics_method["Name"].astype(str) + "()"
+    a = data_metrics_method[data_metrics_method["Name"].isin(a["Method"])]
+    try:
+        b0 = int(a.CountLineCode.max())
+        b1 = int(a.CountLineCode.min())
+        b2 = int(a.CountLineComment.max())
+        b3 = int(a.CountLineComment.min())
+    except:
+        b0 = 0
+        b1 = 0
+        b2 = 0
+        b3 = 0
+
+    my_method_dict.append(
         {
-            i: [
-                {"MM": {"MAX": int(a.MM.max()), "MIN": int(a.MM.min())}},
-                {"PU": {"MAX": int(a.PU.max()), "MIN": int(a.PU.min())}},
-                {"PD": {"MAX": int(a.PU.max()), "MIN": int(a.PD.min())}},
-                {"EM": {"MAX": int(a.EM.max()), "MIN": int(a.EM.min())}},
-                {"IM": {"MAX": int(a.IM.max()), "MIN": int(a.IM.min())}},
-            ]
+            "CountLineCode": {"MAX": b0, "MIN": b1},
+            "CountLineComment": {"MAX": b2, "MIN": b3},
+            "Methods": a["Name"].tolist(),
         }
     )
-
 
 with open("../Resources/json_files/class_cluster.json", "w") as fp:
     json.dump(my_class_dict, fp)
 
 with open("../Resources/json_files/method_cluster.json", "w") as fp:
     json.dump(my_method_dict, fp)
-

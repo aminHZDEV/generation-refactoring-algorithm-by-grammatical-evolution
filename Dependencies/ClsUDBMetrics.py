@@ -3,6 +3,7 @@ import subprocess
 import understand
 import understand as und
 from dotenv import dotenv_values
+import json
 
 
 class ClsUDB_Metrics:
@@ -64,20 +65,28 @@ class ClsUDB_Metrics:
         metrics = db.metric(dotenv_values().get("LIST_METRICS_CLASS").split(" "))
         for k, v in sorted(metrics.items()):
             print(k, "=", v)
+        db.close()
 
     def get_metrics_of_each_function(self, my_path: str):
-        db = understand.open("Resources/und_db/" + my_path + ".und")
+        db = understand.open(my_path)
         for func in db.ents("function,method,procedure"):
             metric = func.metric(dotenv_values().get("LIST_METRICS_METHOD").split(" "))
             for k, v in metric.items():
                 print(k, "=", v)
+        db.close()
 
-    def get_metrics_of_each_class(self, my_path: str):
-        db = understand.open("Resources/und_db/" + my_path + ".und")
+    def get_metrics_of_each_class(self, my_path: str = "", element: list = None):
+        db = understand.open(my_path)
         for func in db.ents("class"):
-            metric = func.metric(dotenv_values().get("LIST_METRICS_CLASS").split(" "))
-            for k, v in metric.items():
-                print(k, "=", v)
+            for i in element:
+                metric = func.metric(
+                    dotenv_values().get("LIST_METRICS_CLASS").split(" ")
+                )
+                if i == func.name():
+                    print("IN IF", func.name())
+                    db.close()
+                    return metric, True
+        return None, False
 
     def get_dep_of_each_class(self, csv_path: str, db_path: str):
         """
@@ -270,6 +279,110 @@ class DesignMetrics:
         for k, v in sorted(db_level_metrics.items()):
             print(k, "=", v)
         dbx.close()
+
+
+class Similarity:
+    def __init__(self, mode: int = 1, actors: list = None, udb_path: str = ""):
+        """
+        if mode == 1 => class base | if mode == 2 => method base
+        7 metric for class base | two metric for methode base
+        :param mode:
+        :param metrics:
+        """
+        self.mode = mode
+        self.actors = actors
+        self.udb_path = udb_path
+
+    def read_class_json(self):
+        """
+        read json files that save min and max of metric from refactoring class level model
+        :return:
+        """
+        f = open("Resources/json_files/class_cluster.json").read()
+        clusters = json.loads(f)
+        return clusters
+
+    def read_method_json(self):
+        """
+        read json files that save min and max of metric from refactoring method level model
+        :return:
+        """
+        f = open("Resources/json_files/method_cluster.json").read()
+        clusters = json.loads(f)
+        return clusters
+
+    def rsim(self):
+        """
+        if elments in cluster exist
+        :param elements:
+        :return:
+        """
+        counter = 0
+        cluster = self.read_class_json()
+        length = len(cluster)
+        for i in self.actors:
+            for ac in i["obj"]:
+                if ac.refactoring.find("ERROR") != -1:
+                    for item in cluster:
+                        for j in ac.source:
+                            if int(dotenv_values().get("MODE_SIM")) == 1:
+                                if j in item["Class"]:
+                                    counter += 1
+                            elif int(dotenv_values().get("MODE_SIM")) == 2:
+                                if j in item["Method"]:
+                                    counter += 1
+        if length > 0:
+            return counter / length
+        else:
+            return 0
+
+    def tsim(self):
+        """
+        calculate number of similarity between model and metrics of element
+        :param clusters:
+        :param metrics:
+        :return:
+        """
+        obj0 = ClsUDB_Metrics()
+        counter = 0
+        cluster = self.read_class_json()
+        length = len(cluster)
+        for i in self.actors:
+            for ac in i["obj"]:
+                if ac.refactoring.find("ERROR") != -1:
+                    print("SOURCES : ", ac.source)
+                    print("SOURCES : ", [ac.source[-1]])
+                    print("SOURCES : ", type(ac.source))
+                    m, flag = obj0.get_metrics_of_each_class(
+                        my_path=self.udb_path, element=[ac.source[-1]]
+                    )
+                    if flag:
+                        for k, v in m.items():
+                            for item in cluster:
+                                if v is not None:
+                                    if item[k]["MAX"] >= float(v) and item[k][
+                                        "MIN"
+                                    ] <= float(v):
+                                        counter += 1
+        if length > 0:
+            return counter / length
+        else:
+            return 0
+
+    def sim(self):
+        """
+        method to calculate similarity between number of refactoring and similarity elements of it
+        1/2 rsim + tsim
+        :return:
+        """
+        if self.mode == 1:
+            length = len(self.actors)
+            if length > 0:
+                return 0.5 * (self.tsim() + self.rsim()) / length
+            else:
+                return 0
+        elif self.mode == 2:
+            pass
 
 
 class DesignQualityAttributes:
